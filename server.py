@@ -68,6 +68,13 @@ li .t{flex:1;min-width:0}
 li .t strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 li .t span{color:var(--mut);font-size:.85rem}
 a{color:var(--acc)}
+#bar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:8px 0}
+#bar .all{display:flex;gap:8px;align-items:center;color:var(--mut);font-size:.9rem;cursor:pointer}
+#bar .sort{margin-left:auto;color:var(--mut);font-size:.9rem}
+input[type=checkbox]{width:18px;height:18px;accent-color:var(--acc);flex:none;cursor:pointer}
+select{font:inherit;background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:2px 6px}
+li.sel{background:color-mix(in srgb,var(--acc) 10%,transparent)}
+#del{color:#c0392b;border-color:#c0392b}
 button{font:inherit;background:none;border:1px solid var(--line);color:var(--mut);
  border-radius:6px;padding:2px 10px;cursor:pointer}
 button:hover{color:#c0392b;border-color:#c0392b}
@@ -80,6 +87,20 @@ button:hover{color:#c0392b;border-color:#c0392b}
 <input id="file" type="file" multiple hidden accept=".epub,.pdf,.mobi,.azw3,.cbz,.txt,.fb2">
 <div id="queue"></div>
 <h2>Books (<span id="count">0</span>)</h2>
+<div id="bar">
+<label class="all"><input type="checkbox" id="all"><span id="sel">Select all</span></label>
+<button id="del" hidden>Delete selected</button>
+<label class="sort">Sort
+<select id="sort">
+<option value="title">Title A\u2013Z</option>
+<option value="title-desc">Title Z\u2013A</option>
+<option value="author">Author A\u2013Z</option>
+<option value="newest">Newest first</option>
+<option value="oldest">Oldest first</option>
+<option value="largest">Largest first</option>
+<option value="smallest">Smallest first</option>
+</select></label>
+</div>
 <ul id="list"></ul>
 </main>
 <script>
@@ -117,24 +138,89 @@ function upload(files){
   });
 }
 
-async function load(){
-  const r = await fetch('/api/books'); const books = await r.json();
-  $('count').textContent = books.length;
+let books = [], selected = new Set(), rows = [], lastIdx = null;
+const SORTS = {
+  'title': (a, b) => a.title.localeCompare(b.title, undefined, {numeric: true, sensitivity: 'base'}),
+  'title-desc': (a, b) => SORTS.title(b, a),
+  'author': (a, b) => a.author.localeCompare(b.author, undefined, {sensitivity: 'base'}) || SORTS.title(a, b),
+  'newest': (a, b) => b.mtime.localeCompare(a.mtime),
+  'oldest': (a, b) => a.mtime.localeCompare(b.mtime),
+  'largest': (a, b) => b.size - a.size,
+  'smallest': (a, b) => a.size - b.size
+};
+const sortSel = $('sort');
+try { const v = localStorage.getItem('opds-sort'); if (v && SORTS[v]) sortSel.value = v; } catch (e) {}
+sortSel.onchange = () => { try { localStorage.setItem('opds-sort', sortSel.value); } catch (e) {} render(); };
+
+function refresh() {
+  rows.forEach(r => { const on = selected.has(r.rel); r.cb.checked = on; r.li.classList.toggle('sel', on); });
+  const n = selected.size, total = books.length;
+  $('all').checked = total > 0 && n === total;
+  $('all').indeterminate = n > 0 && n < total;
+  $('sel').textContent = n ? n + ' selected' : 'Select all';
+  $('del').hidden = n === 0;
+  $('del').textContent = 'Delete selected (' + n + ')';
+}
+
+$('all').onchange = () => {
+  if ($('all').checked) books.forEach(b => selected.add(b.rel)); else selected.clear();
+  refresh();
+};
+
+$('del').onclick = async () => {
+  const names = [...selected];
+  if (!names.length || !confirm('Delete ' + names.length + (names.length === 1 ? ' book' : ' books') + '? This cannot be undone.')) return;
+  $('del').disabled = true;
+  let failed = 0;
+  for (const rel of names) {
+    try {
+      const r = await fetch('/delete?name=' + encodeURIComponent(rel), {method: 'POST', headers: {'X-Requested-With': 'opds'}});
+      if (r.ok) selected.delete(rel); else failed++;
+    } catch (e) { failed++; }
+  }
+  $('del').disabled = false;
+  await load();
+  if (failed) alert(failed + ' could not be deleted.');
+};
+
+function render() {
+  const list = [...books].sort(SORTS[sortSel.value]);
   const ul = $('list'); ul.textContent = '';
-  books.forEach(b => {
+  rows = []; lastIdx = null;
+  $('count').textContent = books.length;
+  list.forEach((b, i) => {
     const li = document.createElement('li');
+    const cb = document.createElement('input'); cb.type = 'checkbox';
+    cb.setAttribute('aria-label', 'Select ' + b.title);
+    cb.onclick = ev => {
+      const on = cb.checked;
+      if (ev.shiftKey && lastIdx !== null) {
+        for (let k = Math.min(lastIdx, i); k <= Math.max(lastIdx, i); k++) on ? selected.add(list[k].rel) : selected.delete(list[k].rel);
+      } else { on ? selected.add(b.rel) : selected.delete(b.rel); }
+      lastIdx = i; refresh();
+    };
     const t = document.createElement('div'); t.className = 't';
-    const s = document.createElement('strong'); s.textContent = b.title;
+    const s1 = document.createElement('strong'); s1.textContent = b.title;
     const m = document.createElement('span'); m.textContent = b.author + ' \\u00b7 ' + size(b.size);
-    t.append(s, m);
-    const a = document.createElement('a'); a.href = '/download/' + encodeURIComponent(b.rel).replace(/%2F/g,'/'); a.textContent = 'Download';
+    t.append(s1, m);
+    const a = document.createElement('a'); a.href = '/download/' + encodeURIComponent(b.rel).replace(/%2F/g, '/'); a.textContent = 'Download';
     const d = document.createElement('button'); d.textContent = 'Delete';
     d.onclick = async () => {
       if (!confirm('Delete "' + b.title + '"?')) return;
-      await fetch('/delete?name=' + encodeURIComponent(b.rel), {method:'POST', headers:{'X-Requested-With':'opds'}}); load();
+      await fetch('/delete?name=' + encodeURIComponent(b.rel), {method: 'POST', headers: {'X-Requested-With': 'opds'}});
+      selected.delete(b.rel); load();
     };
-    li.append(t, a, d); ul.appendChild(li);
+    li.append(cb, t, a, d); ul.appendChild(li);
+    rows.push({rel: b.rel, li: li, cb: cb});
   });
+  refresh();
+}
+
+async function load() {
+  const r = await fetch('/api/books'); books = await r.json();
+  const have = new Set(books.map(b => b.rel));
+  [...selected].forEach(rel => { if (!have.has(rel)) selected.delete(rel); });
+  render();
 }
 load();
 </script></body></html>

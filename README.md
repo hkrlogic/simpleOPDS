@@ -10,6 +10,8 @@ OPDS-capable e-reader (built with the XTEink in mind, but it's standard OPDS 1.2
   page; e-readers that connect to the same address get the OPDS catalog (all books
   A-Z, recently added, search). The catalog is also always available at `/opds`
 - Reads title and author from EPUB metadata (falls back to the filename)
+- Sort the book list by title, author, date added or size (your choice is remembered)
+- Select several books (shift-click for a range, or select all) and delete them in one go
 - Supports EPUB, PDF, MOBI, AZW3, CBZ, TXT and FB2
 - Python standard library only; small multi-arch image (amd64 and arm64)
 - Optional basic auth; runs as a non-root user
