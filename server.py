@@ -338,6 +338,17 @@ class Handler(BaseHTTPRequestHandler):
                     n += 1
                     dest = os.path.join(BOOKS_DIR, f"{stem} ({n}){ext}")
                 os.rename(tmp, dest)
+            except PermissionError:
+                self.close_connection = True
+                return self.send_json(
+                    {
+                        "error": "the books folder is not writable by the server "
+                        f"(running as UID {os.getuid()}). Make that folder writable "
+                        f"by UID {os.getuid()}, e.g. chown -R {os.getuid()}:{os.getgid()} <folder>. "
+                        "See the README."
+                    },
+                    500,
+                )
             except Exception as e:
                 if os.path.exists(tmp):
                     os.remove(tmp)
@@ -452,6 +463,16 @@ def main():
     a = p.parse_args()
     BOOKS_DIR = a.books
     os.makedirs(BOOKS_DIR, exist_ok=True)
+    try:
+        probe = os.path.join(BOOKS_DIR, f".probe-{uuid.uuid4().hex}")
+        open(probe, "wb").close()
+        os.remove(probe)
+    except OSError as e:
+        print(
+            f"WARNING: {os.path.abspath(BOOKS_DIR)} is not writable ({e}); uploads will fail.\n"
+            f"         The server runs as UID {os.getuid()}. Fix the folder's owner, e.g.: "
+            f"chown -R {os.getuid()}:{os.getgid()} <folder>"
+        )
     print(f"Serving {os.path.abspath(BOOKS_DIR)}")
     print(f"OPDS catalog: http://{lan_ip()}:{a.port}/opds")
     ThreadingHTTPServer((a.host, a.port), Handler).serve_forever()

@@ -9,6 +9,12 @@ services:
       - "8080:8080"
     volumes:
       - opds-books:/books
+    # Hardening: the app needs none of these privileges.
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     # Strongly recommended if the port is reachable by anyone but you:
     # environment:
     #   OPDS_USER: reader

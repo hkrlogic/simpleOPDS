@@ -52,13 +52,18 @@ Then:
 | `OPDS_PASS`     | unset   | Password for basic auth                                 |
 | `MAX_UPLOAD_MB` | `500`   | Largest allowed upload                                  |
 
-Books live in `/books` inside the container. Use a named volume (as above) or a
-bind mount such as `/srv/books:/books`. On startup the container sets the owner
-of the top-level `/books` folder to its unprivileged user (UID 1000) and then
-drops root, so existing volumes and host folders work without a manual `chown`.
-Note that this changes the owner of a bind-mounted host folder. If you set
-`user:` in your compose file the container skips this step, and the folder must
-already be writable by that user.
+Books live in `/books` inside the container. The container always runs as an
+unprivileged user (UID 1000) and never as root, so the folder you mount has to
+be writable by that user:
+
+- **New named volume (as above):** works automatically.
+- **Existing volume or bind mount** (e.g. `/srv/books:/books`): make it writable
+  once with `sudo chown -R 1000:1000 /srv/books`. For an existing named volume
+  in Portainer, open the container's Console as `root` and run
+  `chown -R 1000:1000 /books`, or delete the empty volume and redeploy.
+- **Not sure?** The container logs a warning at startup if the folder isn't
+  writable, and the upload page shows the exact command to run.
+- **Need a different UID?** Set `user: "<uid>:<gid>"` in your compose file.
 
 ## Security
 
@@ -72,6 +77,12 @@ Basic auth over plain HTTP sends the password unencrypted.
 Only the listed ebook extensions can be uploaded, filenames are sanitized,
 downloads can't escape the books folder, and state-changing requests require a
 custom header so other websites can't trigger them from your browser.
+
+The container never runs as root, and the example compose file drops every
+Linux capability, blocks privilege escalation (`no-new-privileges`) and mounts
+the root filesystem read-only. The app needs none of those privileges, so a bug
+in it has very little to work with. If your Docker host doesn't support one of
+these options, remove that line; the app doesn't depend on them.
 
 ## Run without Docker
 
