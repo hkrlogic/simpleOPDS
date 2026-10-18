@@ -1,0 +1,19 @@
+services:
+  opds:
+    image: ghcr.io/hkrlogic/simpleopds:latest
+    # To build locally instead, comment out `image` and use:
+    # build: .
+    container_name: opds
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - opds-books:/books
+    # Strongly recommended if the port is reachable by anyone but you:
+    # environment:
+    #   OPDS_USER: reader
+    #   OPDS_PASS: change-me
+    #   MAX_UPLOAD_MB: 500
+
+volumes:
+  opds-books:
