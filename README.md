@@ -6,8 +6,9 @@ A tiny, dependency-free [OPDS](https://opds.io) ebook server with a drag-and-dro
 upload page. Drop EPUBs onto a web page, then browse and download them from any
 OPDS-capable e-reader (built with the XTEink in mind, but it's standard OPDS 1.2).
 
-- **Web page** at `/` to upload (drag and drop), list and delete books
-- **OPDS catalog** at `/opds`: all books (A-Z), recently added, search
+- **One address for both:** open `http://<server-ip>:8080` in a browser for the upload
+  page; e-readers that connect to the same address get the OPDS catalog (all books
+  A-Z, recently added, search). The catalog is also always available at `/opds`
 - Reads title and author from EPUB metadata (falls back to the filename)
 - Supports EPUB, PDF, MOBI, AZW3, CBZ, TXT and FB2
 - Python standard library only; small multi-arch image (amd64 and arm64)
@@ -53,8 +54,9 @@ this always gives valid YAML.
 Then:
 
 1. Open `http://<server-ip>:8080/` and drag your books onto the page.
-2. On your e-reader, add a catalog: `http://<server-ip>:8080/opds`
-   (if you set a username and password, enter them in the reader too).
+2. On your e-reader, add a catalog: `http://<server-ip>:8080` (if it can't
+   connect, try `http://<server-ip>:8080/opds`). If you set a username and
+   password, enter them in the reader too.
 
 ## Configuration
 

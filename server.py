@@ -73,7 +73,8 @@ button{font:inherit;background:none;border:1px solid var(--line);color:var(--mut
 button:hover{color:#c0392b;border-color:#c0392b}
 </style></head><body><main>
 <h1>Library</h1>
-<p class="sub">Add this catalog to your reader: <code id="opds"></code></p>
+<p class="sub">Add this catalog to your reader: <code id="opds"></code><br>
+<small>If your reader can't connect, add <code>/opds</code> to the end of the address.</small></p>
 <div id="drop"><b>Drop books here</b> or click to choose<br>
 <small>EPUB, PDF, MOBI, AZW3, CBZ, TXT, FB2</small></div>
 <input id="file" type="file" multiple hidden accept=".epub,.pdf,.mobi,.azw3,.cbz,.txt,.fb2">
@@ -83,7 +84,7 @@ button:hover{color:#c0392b;border-color:#c0392b}
 </main>
 <script>
 const $ = id => document.getElementById(id);
-$('opds').textContent = location.origin + '/opds';
+$('opds').textContent = location.origin;
 const drop = $('drop'), input = $('file');
 drop.onclick = () => input.click();
 input.onchange = () => { upload([...input.files]); input.value = ''; };
@@ -268,6 +269,7 @@ class Handler(BaseHTTPRequestHandler):
     def send_xml(self, body, ctype):
         data = body.encode("utf-8")
         self.send_response(200)
+        self.send_header("Vary", "Accept")
         self.send_header("Content-Type", ctype + "; charset=utf-8")
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
@@ -373,9 +375,12 @@ class Handler(BaseHTTPRequestHandler):
         path = url.path.rstrip("/") or "/"
         base = self.base()
 
-        if path == "/":
+        # Browsers (which always ask for HTML) get the web page at "/"; OPDS
+        # readers and everything else get the catalog there. /opds always works.
+        if path == "/" and "text/html" in self.headers.get("Accept", ""):
             data = PAGE.encode("utf-8")
             self.send_response(200)
+            self.send_header("Vary", "Accept")
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
@@ -384,7 +389,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/books":
             return self.send_json(scan_books())
 
-        if path == "/opds":
+        if path in ("/opds", "/"):
             entries = nav_entry("All books", "/opds/all", "Every book, A-Z", base)
             entries += nav_entry("Recently added", "/opds/recent", "Newest 50 books", base)
             return self.send_xml(feed("Library", "/opds", "nav", entries, base), NAV_TYPE)
