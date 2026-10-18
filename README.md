@@ -19,14 +19,21 @@ OPDS-capable e-reader (built with the XTEink in mind, but it's standard OPDS 1.2
 services:
   opds:
     image: ghcr.io/hkrlogic/simpleopds:latest
+    container_name: opds
     restart: unless-stopped
     ports:
       - "8080:8080"
     volumes:
       - opds-books:/books
-    # environment:
-    #   OPDS_USER: reader
-    #   OPDS_PASS: change-me
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    #environment:
+    #  OPDS_USER: reader
+    #  OPDS_PASS: change-me
+    #  MAX_UPLOAD_MB: 500
 
 volumes:
   opds-books:
@@ -37,6 +44,11 @@ docker compose up -d
 ```
 
 In **Portainer**: Stacks → Add stack → Web editor → paste the above → Deploy.
+
+**To add a password** (recommended if anyone else can reach the port): delete just
+the `#` character at the start of the four `environment` lines, leave the spaces
+alone, and change `change-me` to your own password. The lines are laid out so
+this always gives valid YAML.
 
 Then:
 
