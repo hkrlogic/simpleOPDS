@@ -1,5 +1,7 @@
 # simpleOPDS
 
+![The simpleOPDS web page: drop zone and book list](docs/screenshot.png)
+
 A tiny, dependency-free [OPDS](https://opds.io) ebook server with a drag-and-drop
 upload page. Drop EPUBs onto a web page, then browse and download them from any
 OPDS-capable e-reader (built with the XTEink in mind, but it's standard OPDS 1.2).
@@ -51,8 +53,12 @@ Then:
 | `MAX_UPLOAD_MB` | `500`   | Largest allowed upload                                  |
 
 Books live in `/books` inside the container. Use a named volume (as above) or a
-bind mount such as `/srv/books:/books`; a bind-mounted folder must be writable
-by UID 1000 (`chown 1000:1000 /srv/books`).
+bind mount such as `/srv/books:/books`. On startup the container sets the owner
+of the top-level `/books` folder to its unprivileged user (UID 1000) and then
+drops root, so existing volumes and host folders work without a manual `chown`.
+Note that this changes the owner of a bind-mounted host folder. If you set
+`user:` in your compose file the container skips this step, and the folder must
+already be writable by that user.
 
 ## Security
 
