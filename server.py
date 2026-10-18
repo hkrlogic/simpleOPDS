@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Simple OPDS 1.2 server. Standard library only.
+"""simpleOPDS: a simple OPDS 1.2 ebook server. Standard library only.
 
 Usage:
     python3 server.py [--books ./books] [--port 8080] [--host 0.0.0.0]
@@ -39,11 +39,15 @@ ACQ_TYPE = "application/atom+xml;profile=opds-catalog;kind=acquisition"
 BOOKS_DIR = "books"
 _META = {}  # (path, mtime_ns, size) -> (title, author); avoids re-opening EPUBs
 MAX_UPLOAD = int(os.environ.get("MAX_UPLOAD_MB", "500")) * 1024 * 1024
+APP_NAME = "simpleOPDS"
+LIBRARY_TITLE = "OPDSLibrary"  # shown as the page heading and the catalog name
+REPO_URL = "https://github.com/hkrlogic/simpleOPDS"
 
 PAGE = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Library</title>
+<title>OPDSLibrary &middot; simpleOPDS</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232a6f5e'/%3E%3Cpath d='M9 8h11a3 3 0 0 1 3 3v13H12a3 3 0 0 1-3-3z' fill='none' stroke='white' stroke-width='2'/%3E%3C/svg%3E">
 <style>
 :root{--bg:#fafaf8;--fg:#1c1c1a;--mut:#6b6b66;--line:#dcdcd6;--acc:#2a6f5e;--card:#fff}
 @media(prefers-color-scheme:dark){:root{--bg:#161615;--fg:#ececE8;--mut:#9a9a94;--line:#2e2e2b;--acc:#5fb8a2;--card:#1f1f1d}}
@@ -68,6 +72,7 @@ li .t{flex:1;min-width:0}
 li .t strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 li .t span{color:var(--mut);font-size:.85rem}
 a{color:var(--acc)}
+footer{margin-top:32px;color:var(--mut);font-size:.85rem;text-align:center}
 #bar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:8px 0}
 #bar .all{display:flex;gap:8px;align-items:center;color:var(--mut);font-size:.9rem;cursor:pointer}
 #bar .sort{margin-left:auto;color:var(--mut);font-size:.9rem}
@@ -79,7 +84,7 @@ button{font:inherit;background:none;border:1px solid var(--line);color:var(--mut
  border-radius:6px;padding:2px 10px;cursor:pointer}
 button:hover{color:#c0392b;border-color:#c0392b}
 </style></head><body><main>
-<h1>Library</h1>
+<h1>OPDSLibrary</h1>
 <p class="sub">Add this catalog to your reader: <code id="opds"></code><br>
 <small>If your reader can't connect, add <code>/opds</code> to the end of the address.</small></p>
 <div id="drop"><b>Drop books here</b> or click to choose<br>
@@ -102,6 +107,7 @@ button:hover{color:#c0392b;border-color:#c0392b}
 </select></label>
 </div>
 <ul id="list"></ul>
+<footer>Powered by <a href="https://github.com/hkrlogic/simpleOPDS">simpleOPDS</a></footer>
 </main>
 <script>
 const $ = id => document.getElementById(id);
@@ -296,6 +302,7 @@ def feed(title, self_href, kind, entries_xml, base):
   <id>urn:opds:{escape(self_href)}</id>
   <title>{escape(title)}</title>
   <updated>{now()}</updated>
+  <generator uri="{REPO_URL}">{APP_NAME}</generator>
   <link rel="self" href="{attr(base + self_href)}" type="{ftype}"/>
   <link rel="start" href="{base}/opds" type="{NAV_TYPE}"/>
   <link rel="search" href="{base}/opds/opensearch.xml" type="application/opensearchdescription+xml"/>
@@ -327,7 +334,7 @@ def book_entry(b, base):
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "SimpleOPDS/1.0"
+    server_version = "simpleOPDS/1.0"
 
     def base(self):
         """Public base URL for links. Honors a reverse proxy's forwarded headers."""
@@ -478,7 +485,7 @@ class Handler(BaseHTTPRequestHandler):
         if path in ("/opds", "/"):
             entries = nav_entry("All books", "/opds/all", "Every book, A-Z", base)
             entries += nav_entry("Recently added", "/opds/recent", "Newest 50 books", base)
-            return self.send_xml(feed("Library", "/opds", "nav", entries, base), NAV_TYPE)
+            return self.send_xml(feed(LIBRARY_TITLE, "/opds", "nav", entries, base), NAV_TYPE)
 
         if path == "/opds/all":
             xml = "".join(book_entry(b, base) for b in scan_books())
@@ -500,8 +507,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/opds/opensearch.xml":
             body = f"""<?xml version="1.0" encoding="UTF-8"?>
 <OpenSearchDescription xmlns="http://a9.com/-/spec/opensearch/1.1/">
-  <ShortName>Library</ShortName>
-  <Description>Search the library</Description>
+  <ShortName>{LIBRARY_TITLE}</ShortName>
+  <Description>Search {LIBRARY_TITLE}</Description>
   <Url type="{ACQ_TYPE}" template="{base}/opds/search?q={{searchTerms}}"/>
 </OpenSearchDescription>
 """
@@ -564,8 +571,8 @@ def main():
             f"         The server runs as UID {os.getuid()}. Fix the folder's owner, e.g.: "
             f"chown -R {os.getuid()}:{os.getgid()} <folder>"
         )
-    print(f"Serving {os.path.abspath(BOOKS_DIR)}")
-    print(f"OPDS catalog: http://{lan_ip()}:{a.port}/opds")
+    print(f"{APP_NAME}: serving {os.path.abspath(BOOKS_DIR)}")
+    print(f"Web page and OPDS catalog: http://{lan_ip()}:{a.port}  (catalog also at /opds)")
     ThreadingHTTPServer((a.host, a.port), Handler).serve_forever()
 
 

@@ -1,6 +1,7 @@
 FROM python:3.12-alpine
 
-LABEL org.opencontainers.image.source="https://github.com/hkrlogic/simpleOPDS" \
+LABEL org.opencontainers.image.title="simpleOPDS" \
+      org.opencontainers.image.source="https://github.com/hkrlogic/simpleOPDS" \
       org.opencontainers.image.description="Tiny OPDS ebook server with a drag-and-drop upload page" \
       org.opencontainers.image.licenses="MIT"
 
