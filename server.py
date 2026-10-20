@@ -73,13 +73,13 @@ def set_read(rels, is_read):
             raise
 MAX_UPLOAD = int(os.environ.get("MAX_UPLOAD_MB", "500")) * 1024 * 1024
 APP_NAME = "simpleOPDS"
-LIBRARY_TITLE = "OPDSLibrary"  # shown as the page heading and the catalog name
+LIBRARY_TITLE = "OPDS Library"  # shown as the page heading and the catalog name
 REPO_URL = "https://github.com/hkrlogic/simpleOPDS"
 
 PAGE = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>OPDSLibrary &middot; simpleOPDS</title>
+<title>OPDS Library &middot; simpleOPDS</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232a6f5e'/%3E%3Cpath d='M9 8h11a3 3 0 0 1 3 3v13H12a3 3 0 0 1-3-3z' fill='none' stroke='white' stroke-width='2'/%3E%3C/svg%3E">
 <style>
 :root{--bg:#fafaf8;--fg:#1c1c1a;--mut:#6b6b66;--line:#dcdcd6;--acc:#2a6f5e;--card:#fff}
@@ -122,7 +122,7 @@ li .t .badge{color:var(--acc);font-weight:600}
 .acts{display:flex;gap:8px;align-items:center;flex:none}
 @media(max-width:560px){li{flex-wrap:wrap}li .t{flex:1 1 calc(100% - 40px)}.acts{flex-basis:100%;padding-left:30px}}
 </style></head><body><main>
-<h1>OPDSLibrary</h1>
+<h1>OPDS Library</h1>
 <p class="sub">Add this catalog to your reader: <code id="opds"></code><br>
 <small>If your reader can't connect, add <code>/opds</code> to the end of the address.</small></p>
 <div id="drop"><b>Drop books here</b> or click to choose<br>
