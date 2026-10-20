@@ -16,6 +16,7 @@ import mimetypes
 import os
 import re
 import socket
+import threading
 import uuid
 import zipfile
 from datetime import datetime, timezone
@@ -38,6 +39,38 @@ ACQ_TYPE = "application/atom+xml;profile=opds-catalog;kind=acquisition"
 
 BOOKS_DIR = "books"
 _META = {}  # (path, mtime_ns, size) -> (title, author); avoids re-opening EPUBs
+STATE_FILE = ".simpleopds.json"  # lives in the books folder; ignored by the book scan
+_STATE_LOCK = threading.Lock()
+
+
+def load_read():
+    """Return {relative book path: ISO time it was marked read}."""
+    try:
+        with open(os.path.join(BOOKS_DIR, STATE_FILE), encoding="utf-8") as f:
+            read = json.load(f).get("read", {})
+        return read if isinstance(read, dict) else {}
+    except (OSError, ValueError, AttributeError):
+        return {}
+
+
+def set_read(rels, is_read):
+    """Mark books read or unread. Raises OSError if the folder isn't writable."""
+    with _STATE_LOCK:
+        read = load_read()
+        for rel in rels:
+            if is_read:
+                read.setdefault(rel, now())
+            else:
+                read.pop(rel, None)
+        tmp = os.path.join(BOOKS_DIR, f".{uuid.uuid4().hex}.state")
+        try:
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump({"read": read}, f, indent=1, sort_keys=True)
+            os.replace(tmp, os.path.join(BOOKS_DIR, STATE_FILE))
+        except BaseException:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+            raise
 MAX_UPLOAD = int(os.environ.get("MAX_UPLOAD_MB", "500")) * 1024 * 1024
 APP_NAME = "simpleOPDS"
 LIBRARY_TITLE = "OPDSLibrary"  # shown as the page heading and the catalog name
@@ -75,14 +108,19 @@ a{color:var(--acc)}
 footer{margin-top:32px;color:var(--mut);font-size:.85rem;text-align:center}
 #bar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:8px 0}
 #bar .all{display:flex;gap:8px;align-items:center;color:var(--mut);font-size:.9rem;cursor:pointer}
-#bar .sort{margin-left:auto;color:var(--mut);font-size:.9rem}
+#bar .right{margin-left:auto;display:flex;gap:12px;flex-wrap:wrap}
+#bar .sort{color:var(--mut);font-size:.9rem}
 input[type=checkbox]{width:18px;height:18px;accent-color:var(--acc);flex:none;cursor:pointer}
 select{font:inherit;background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:2px 6px}
 li.sel{background:color-mix(in srgb,var(--acc) 10%,transparent)}
 #del{color:#c0392b;border-color:#c0392b}
 button{font:inherit;background:none;border:1px solid var(--line);color:var(--mut);
  border-radius:6px;padding:2px 10px;cursor:pointer}
-button:hover{color:#c0392b;border-color:#c0392b}
+button:hover{color:var(--acc);border-color:var(--acc)}
+button.danger:hover{color:#c0392b;border-color:#c0392b}
+li .t .badge{color:var(--acc);font-weight:600}
+.acts{display:flex;gap:8px;align-items:center;flex:none}
+@media(max-width:560px){li{flex-wrap:wrap}li .t{flex:1 1 calc(100% - 40px)}.acts{flex-basis:100%;padding-left:30px}}
 </style></head><body><main>
 <h1>OPDSLibrary</h1>
 <p class="sub">Add this catalog to your reader: <code id="opds"></code><br>
@@ -94,7 +132,15 @@ button:hover{color:#c0392b;border-color:#c0392b}
 <h2>Books (<span id="count">0</span>)</h2>
 <div id="bar">
 <label class="all"><input type="checkbox" id="all"><span id="sel">Select all</span></label>
-<button id="del" hidden>Delete selected</button>
+<button id="rd" hidden>Mark read</button>
+<button id="ur" hidden>Mark unread</button>
+<button id="del" class="danger" hidden>Delete selected</button>
+<div class="right"><label class="sort">Show
+<select id="filter">
+<option value="all">All</option>
+<option value="unread">Unread</option>
+<option value="read">Read</option>
+</select></label>
 <label class="sort">Sort
 <select id="sort">
 <option value="title">Title A\u2013Z</option>
@@ -104,7 +150,7 @@ button:hover{color:#c0392b;border-color:#c0392b}
 <option value="oldest">Oldest first</option>
 <option value="largest">Largest first</option>
 <option value="smallest">Smallest first</option>
-</select></label>
+</select></label></div>
 </div>
 <ul id="list"></ul>
 <footer>Powered by <a href="https://github.com/hkrlogic/simpleOPDS">simpleOPDS</a></footer>
@@ -154,24 +200,36 @@ const SORTS = {
   'largest': (a, b) => b.size - a.size,
   'smallest': (a, b) => a.size - b.size
 };
-const sortSel = $('sort');
+const sortSel = $('sort'), filterSel = $('filter');
 try { const v = localStorage.getItem('opds-sort'); if (v && SORTS[v]) sortSel.value = v; } catch (e) {}
+try { const v = localStorage.getItem('opds-filter'); if (v === 'all' || v === 'read' || v === 'unread') filterSel.value = v; } catch (e) {}
 sortSel.onchange = () => { try { localStorage.setItem('opds-sort', sortSel.value); } catch (e) {} render(); };
+filterSel.onchange = () => { try { localStorage.setItem('opds-filter', filterSel.value); } catch (e) {} render(); };
 
 function refresh() {
   rows.forEach(r => { const on = selected.has(r.rel); r.cb.checked = on; r.li.classList.toggle('sel', on); });
-  const n = selected.size, total = books.length;
+  const n = selected.size, total = rows.length;
   $('all').checked = total > 0 && n === total;
   $('all').indeterminate = n > 0 && n < total;
   $('sel').textContent = n ? n + ' selected' : 'Select all';
-  $('del').hidden = n === 0;
+  ['rd', 'ur', 'del'].forEach(id => { $(id).hidden = n === 0; });
   $('del').textContent = 'Delete selected (' + n + ')';
 }
 
 $('all').onchange = () => {
-  if ($('all').checked) books.forEach(b => selected.add(b.rel)); else selected.clear();
+  if ($('all').checked) rows.forEach(r => selected.add(r.rel)); else selected.clear();
   refresh();
 };
+
+async function mark(rels, flag) {
+  try {
+    const r = await fetch('/mark', {method: 'POST', headers: {'X-Requested-With': 'opds', 'Content-Type': 'application/json'}, body: JSON.stringify({names: rels, read: flag})});
+    if (!r.ok) { let m = 'Could not save.'; try { m = (await r.json()).error; } catch (e) {} alert(m); }
+  } catch (e) { alert('Could not save.'); }
+  await load();
+}
+$('rd').onclick = () => mark([...selected], true);
+$('ur').onclick = () => mark([...selected], false);
 
 $('del').onclick = async () => {
   const names = [...selected];
@@ -190,10 +248,19 @@ $('del').onclick = async () => {
 };
 
 function render() {
-  const list = [...books].sort(SORTS[sortSel.value]);
+  const f = filterSel.value;
+  const list = books.filter(b => f === 'all' || (f === 'read') === !!b.read).sort(SORTS[sortSel.value]);
+  // Never keep a hidden book selected: bulk actions only touch what you can see.
+  const vis = new Set(list.map(b => b.rel));
+  [...selected].forEach(rel => { if (!vis.has(rel)) selected.delete(rel); });
   const ul = $('list'); ul.textContent = '';
   rows = []; lastIdx = null;
-  $('count').textContent = books.length;
+  $('count').textContent = list.length === books.length ? books.length : list.length + ' of ' + books.length;
+  if (!list.length) {
+    const li = document.createElement('li'); li.style.color = 'var(--mut)';
+    li.textContent = books.length ? 'No books match this filter.' : 'No books yet. Drop some above.';
+    ul.appendChild(li);
+  }
   list.forEach((b, i) => {
     const li = document.createElement('li');
     const cb = document.createElement('input'); cb.type = 'checkbox';
@@ -208,15 +275,20 @@ function render() {
     const t = document.createElement('div'); t.className = 't';
     const s1 = document.createElement('strong'); s1.textContent = b.title;
     const m = document.createElement('span'); m.textContent = b.author + ' \\u00b7 ' + size(b.size);
+    if (b.read) { const rb = document.createElement('span'); rb.className = 'badge'; rb.textContent = ' \\u00b7 Read'; m.append(rb); }
     t.append(s1, m);
+    const acts = document.createElement('div'); acts.className = 'acts';
     const a = document.createElement('a'); a.href = '/download/' + encodeURIComponent(b.rel).replace(/%2F/g, '/'); a.textContent = 'Download';
-    const d = document.createElement('button'); d.textContent = 'Delete';
+    const mk = document.createElement('button'); mk.textContent = b.read ? 'Mark unread' : 'Mark read';
+    mk.onclick = () => mark([b.rel], !b.read);
+    const d = document.createElement('button'); d.className = 'danger'; d.textContent = 'Delete';
     d.onclick = async () => {
       if (!confirm('Delete "' + b.title + '"?')) return;
       await fetch('/delete?name=' + encodeURIComponent(b.rel), {method: 'POST', headers: {'X-Requested-With': 'opds'}});
       selected.delete(b.rel); load();
     };
-    li.append(cb, t, a, d); ul.appendChild(li);
+    acts.append(a, mk, d);
+    li.append(cb, t, acts); ul.appendChild(li);
     rows.push({rel: b.rel, li: li, cb: cb});
   });
   refresh();
@@ -224,8 +296,6 @@ function render() {
 
 async function load() {
   const r = await fetch('/api/books'); books = await r.json();
-  const have = new Set(books.map(b => b.rel));
-  [...selected].forEach(rel => { if (!have.has(rel)) selected.delete(rel); });
   render();
 }
 load();
@@ -261,6 +331,7 @@ def epub_meta(path):
 
 def scan_books():
     books = []
+    read = load_read()
     for root, _, files in os.walk(BOOKS_DIR):
         for name in files:
             ext = os.path.splitext(name)[1].lower()
@@ -284,6 +355,7 @@ def scan_books():
                     "rel": rel,
                     "title": title,
                     "author": author or "Unknown",
+                    "read": rel in read,
                     "mime": MIME[ext],
                     "size": st.st_size,
                     "mtime": datetime.fromtimestamp(st.st_mtime, timezone.utc).strftime(
@@ -322,9 +394,10 @@ def nav_entry(title, href, content, base):
 
 
 def book_entry(b, base):
+    title = ("[Read] " if b.get("read") else "") + b["title"]
     href = f"{base}/download/{quote(b['rel'])}"
     return f"""  <entry>
-    <title>{escape(b['title'])}</title>
+    <title>{escape(title)}</title>
     <id>urn:opds:book:{escape(b['rel'])}</id>
     <updated>{b['mtime']}</updated>
     <author><name>{escape(b['author'])}</name></author>
@@ -401,6 +474,34 @@ class Handler(BaseHTTPRequestHandler):
         url = urlparse(self.path)
         name = parse_qs(url.query).get("name", [""])[0]
 
+        if url.path == "/mark":
+            length = self.headers.get("Content-Length", "")
+            if not length.isdigit() or int(length) > 1 << 20:
+                self.close_connection = True
+                return self.send_json({"error": "bad request"}, 400)
+            try:
+                body = json.loads(self.rfile.read(int(length)) or b"{}")
+                names, flag = body["names"], body["read"]
+                if not isinstance(flag, bool) or not isinstance(names, list):
+                    raise ValueError
+                if not all(isinstance(n, str) for n in names):
+                    raise ValueError
+            except (ValueError, KeyError, TypeError):
+                return self.send_json({"error": "bad request"}, 400)
+            root = os.path.realpath(BOOKS_DIR)
+            rels = []
+            for n in names:
+                full = self.resolve(n)
+                if full:
+                    rels.append(os.path.relpath(full, root).replace(os.sep, "/"))
+            try:
+                set_read(rels, flag)
+            except OSError:
+                return self.send_json(
+                    {"error": "could not save read status (is the books folder writable?)"}, 500
+                )
+            return self.send_json({"ok": True, "changed": len(rels)})
+
         if url.path == "/upload":
             name = os.path.basename(name.replace("\\", "/")).strip()
             ext = os.path.splitext(name)[1].lower()
@@ -456,6 +557,10 @@ class Handler(BaseHTTPRequestHandler):
             if not full:
                 return self.send_json({"error": "not found"}, 404)
             os.remove(full)
+            try:  # forget its read status
+                set_read([os.path.relpath(full, os.path.realpath(BOOKS_DIR)).replace(os.sep, "/")], False)
+            except OSError:
+                pass
             return self.send_json({"ok": True})
 
         self.send_error(404)

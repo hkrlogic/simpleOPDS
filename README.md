@@ -12,6 +12,10 @@ OPDS-capable e-reader (built with the XTEink in mind, but it's standard OPDS 1.2
 - Reads title and author from EPUB metadata (falls back to the filename)
 - Sort the book list by title, author, date added or size (your choice is remembered)
 - Select several books (shift-click for a range, or select all) and delete them in one go
+- Mark books as read on the web page (one at a time, or several at once) and filter by
+  Read/Unread. Read books get a `[Read]` prefix in the OPDS catalog, so you can see them
+  on your e-reader. The status is saved in `.simpleopds.json` inside your books folder,
+  so it stays with your books and their backups
 - Supports EPUB, PDF, MOBI, AZW3, CBZ, TXT and FB2
 - Python standard library only; small multi-arch image (amd64 and arm64)
 - Optional basic auth; runs as a non-root user
